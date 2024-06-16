@@ -1,0 +1,248 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://unpkg.com/three@0.140.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sprintf/1.1.2/sprintf.min.js"></script>
+    <script src="../utils/BufferGeometryUtils.js"></script>
+  </head>
+  <body>
+    <canvas id="myCanvas"></canvas>
+    <div id="hud" style="position: absolute; top: 8; left: 8; background: transparent; color: green"></div>
+    <div><input type="file" multiple id="upload"></div>        
+    <div><input type="button" value="START" id="start"></div>
+    <p></p>
+    <script>
+        function tsvToAry(file) {
+          return new Promise(resolve => {
+              let result = [];
+              let reader = new FileReader();
+              reader.readAsText(file);
+              reader.onload = function() {
+              let lines = reader.result.split('\n');
+              lines = lines.filter(str => str !== "");
+              for(let i = 1; i < lines.length; i++) {
+                let data = lines[i].split('\t');
+                result.push(data);
+              }
+              resolve(result);
+              };
+          });
+        }
+
+        function startCalc(){
+          console.log('value: ' + fileBox.value);
+          let files = fileBox.files;
+          let promises = [];
+          let allData = [];  
+          for(let i=0; i<files.length; i++){
+            promises.push(tsvToAry(files[i]));
+          }
+          Promise.all(promises).then(result => {
+            let allData = [];
+            let allMeta = [];
+            for(let i = 0; i < result.length; i++) {
+              allData = allData.concat(result[i]);
+              allMeta.push([result[i].length,files[i]]);
+            }                
+            init(allData, allMeta);
+          });
+        } 
+
+      function tfCoord(d, AzimuthalAngle, PolarAngle){
+        const b = AzimuthalAngle;
+        const c = PolarAngle;
+        const tanb = Math.tan(b);
+        const cosb = Math.cos(b);
+        const cosc = Math.cos(c);
+        const sinc = Math.sin(c);
+        const x = tanb * cosb * sinc * d
+        const y = d * cosc;
+        const z = cosb * sinc * d;
+        return [x, y, z];
+      }
+
+      function init(csvArray, meta) {
+        const density = 1;
+
+        document.querySelector('p').innerText = "processing...";
+
+        const width = 960;
+        const height = 540;
+        const canvasElement = document.querySelector('#myCanvas');
+        const renderer = new THREE.WebGLRenderer({
+          canvas: canvasElement
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+        renderer.toneMapping = THREE.CineonToneMapping;
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+        camera.position.set(0, 30, 0);
+        const controls = new THREE.OrbitControls(camera, canvasElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+        const directionalLight = new THREE.DirectionalLight(0xffffff);
+        directionalLight.position.set(-1, -1, -1);
+        scene.add(directionalLight);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 10);
+        scene.add(ambientLight);
+
+        let d;
+        let aa;
+        let pa;
+        let x_target;
+        let y_target;
+        let z_target;
+        let ms;
+
+        const ISMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000});
+        ISMaterial.opacity = 0.15;
+        ISMaterial.transparent = true;
+
+        const headMaterial = new THREE.MeshLambertMaterial({ color: 0xffff03});
+        headMaterial.opacity = 0.15;
+        headMaterial.transparent = true;
+        
+        const lineMaterial = new THREE.LineBasicMaterial({color: 0xffff00});
+        lineMaterial.opacity = 0.15;
+        lineMaterial.transparent = true;
+
+        function organizeCameraLocations(csvArray, meta){
+          let originAndTargetArray=[];
+          let currentIndex = 0;
+          for (eachMeta of meta){
+            let eachCsvArray = csvArray.slice(currentIndex, currentIndex+eachMeta[0]);
+            currentIndex += eachMeta[0];
+            originAndTargetArray.push([]);
+            const spheres = [];
+            for (line of eachCsvArray){
+              d = line[0];
+              aa = line[1];
+              pa = line[2];
+              x_target = line[3];
+              y_target = line[4];
+              z_target = line[5];
+              ms = line[6];
+
+              const d_local = d;
+              const AzimuthalAngle = aa;
+              const PolarAngle = pa;
+              const xyz_camera_local = tfCoord(d_local, AzimuthalAngle, PolarAngle);
+              const xyz_camera_global = [Number(xyz_camera_local[0])+Number(x_target), Number(xyz_camera_local[1])+Number(y_target), Number(xyz_camera_local[2])+Number(z_target)];
+
+              if (Math.random()<density){
+                const geometrySphere = new THREE.SphereGeometry(0.5, 32, 32);
+                const geometryTranslated = geometrySphere.translate(
+                    xyz_camera_global[0], xyz_camera_global[1], xyz_camera_global[2]
+                );
+                spheres.push(geometryTranslated);
+                originAndTargetArray[originAndTargetArray.length - 1].push([xyz_camera_global[0], xyz_camera_global[1], xyz_camera_global[2],Number(x_target),Number(y_target),Number(z_target)]);
+              }
+            }
+            const geometryVP = THREE.BufferGeometryUtils.mergeBufferGeometries(spheres);
+            const meshVP = new THREE.Mesh(geometryVP, headMaterial);
+            scene.add(meshVP);
+          }
+          return originAndTargetArray;
+        }
+        let originAndTargetArray = organizeCameraLocations(csvArray, meta).flat();
+        let raycasterList = [];
+        let lineList = []
+        for (let i=0;i<originAndTargetArray.length;i++){
+          let originXyz = new THREE.Vector3(originAndTargetArray[i][0], originAndTargetArray[i][1], originAndTargetArray[i][2]);
+          let endXyz =  new THREE.Vector3(originAndTargetArray[i][3], originAndTargetArray[i][4], originAndTargetArray[i][5]);
+          let directionXyz = endXyz.sub(originXyz).normalize()
+          raycasterList[i] = new THREE.Raycaster(
+          originXyz,
+          directionXyz
+          );
+          lineList[i] = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+              originXyz,
+              endXyz
+            ]),
+            lineMaterial
+          );
+          scene.add(lineList[i]);
+        }
+        let beforeLoadingLength = scene.children.length;
+        var callbackId;
+        let targetIndex = -1;
+        let flag = false;
+
+        const loader = new THREE.GLTFLoader();
+        const allModels = { 'dm': '../model/gltf/the_death_and_the_mother/scene.gltf',
+                            'eg': '../model/gltf/earth_globe_size_modified/earth_globe_size_modified.gltf'};
+        let currentModel;                            
+
+        function modelSelector(addOrRemove, modelName=NaN, callback=null){
+          if (addOrRemove == 'add'){
+            loader.load(allModels[modelName], (gltf) => {  
+              const model = gltf.scene;
+              scene.add(model);
+              currentModel = model;
+              if (callback) {
+                callback(gltf);
+              }
+            });
+          } else if (addOrRemove == 'remove'){
+            scene.remove(currentModel);
+          }
+        }
+
+        modelSelector('add','eg', (gltf) => {
+          const model = gltf.scene; 
+          scene.add(model);
+          model.updateMatrixWorld(true);
+          for (let i=0; i<scene.children.length;i++){
+            if (scene.children[i].type == 'Group'){
+              targetIndex = i;
+              flag = true;
+              break;
+            }
+          }
+          let intersectCount = 0;
+          const intersectSpheres = [];
+          if (targetIndex == -1){
+            console.log('there is no target');
+            return;
+          }
+          for (let i=0; i<raycasterList.length;i++){
+            const intersects = raycasterList[i].intersectObjects(scene.children[targetIndex].children);
+            if (1 <= intersects.length) {
+              let isFlag = true;
+              intersects.forEach(({ object }) => { 
+                if (object.type !== 'Line' && isFlag) {
+                  intersectCount++;
+                  isFlag = false;
+                  intersectXyz = intersects[0]['point'];
+                  const geometrySphereIS = new THREE.SphereGeometry(0.1, 10, 10);
+                  const geometryTranslatedIS = geometrySphereIS.translate(
+                      intersectXyz.x, intersectXyz.y, intersectXyz.z
+                  );
+                  intersectSpheres.push(geometryTranslatedIS);               
+                }
+              });
+            }
+            document.querySelector('p').innerText = 
+            `data length: ${csvArray.length}
+            number of intersections: ${intersectCount}`;
+          }
+          const geometryIS = THREE.BufferGeometryUtils.mergeBufferGeometries(intersectSpheres);
+          const meshIS = new THREE.Mesh(geometryIS, ISMaterial);
+          scene.add(meshIS);
+          renderer.setAnimationLoop(() => {
+            renderer.render(scene, camera);
+          });
+        });
+
+      }
+
+      let startButton = document.getElementById('start');
+      startButton.addEventListener('click', startCalc);
+      let fileBox = document.getElementById('upload');
+    </script>
+    </body>
+</html>

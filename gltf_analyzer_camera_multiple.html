@@ -1,0 +1,460 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://unpkg.com/three@0.140.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sprintf/1.1.2/sprintf.min.js"></script>
+
+    <script>
+        
+
+ 
+         
+       
+      
+
+    </script>
+  </head>
+
+    <body>
+    <canvas id="myCanvas"></canvas>
+    <!-- 座標表示用のdivタグ -->
+    <div id="hud" style="position: absolute; top: 8; left: 8; background: transparent; color: green"></div>
+    <br>
+    <button id="reset screen" type="button">Reset Screen</button>
+    <br>
+    <button id="reset target" type="button">Reset Target</button>
+    <br>
+    <button id="axes" type="button">Axes ON/OFF</button>
+    <br>
+    <form id="CheckBtn">
+        <input type="radio" name="group" value="main" checked> 彫刻モデル
+        <input type="radio" name="group" value="rubic"> テストモデル
+        <input type="radio" name="group" value="remove"> モデル削除
+    </form>
+
+
+    <div>
+    <input type="file" multiple name="test" id="upload">
+    </div>
+        
+    <div>
+    <input type="button" value="Check" id="check">
+    </div>
+
+
+    <script>
+            
+        // let participantID;
+        
+        // function integrateData(files){
+        //     return files;
+        // }
+        function tsvToAry(file) {
+            return new Promise(resolve => {
+                let result = [];
+                let reader = new FileReader();
+                reader.readAsText(file);
+                reader.onload = function() {
+                let lines = reader.result.split('\n');
+                for(let i = 1; i < lines.length; i++) { //ヘッダーを含めない
+                    let data = lines[i].split('\t');
+                    result.push(data);
+                }
+                resolve(result);
+                };
+            });
+        }
+
+        function buttonClick(){
+            console.log('value: ' + fileBox.value);
+            let files = fileBox.files;
+            console.log(files);
+            
+            let promises = [];
+            let allData = [];
+
+           
+            for(let i=0; i<files.length; i++){
+                // console.log(files[i]);
+                promises.push(tsvToAry(files[i]));
+            }
+
+
+            Promise.all(promises).then(result => {
+                let allData = [];
+                let allMeta = [];
+                for(let i = 0; i < result.length; i++) {
+                    allData = allData.concat(result[i]);
+                    allMeta.push([result[i].length,files[i]]);
+                }                
+                console.log("allMeta", allMeta);
+                console.log(allData);
+                init(allData, allMeta);
+            });
+
+            
+        } 
+
+        
+      // ページの状態のための変数を準備
+      let axesSwitch = true;
+
+
+    //   // ページの読み込みを待つ
+    //   window.addEventListener('DOMContentLoaded', init);
+
+
+      function calc_xyz(d, AzimuthalAngle, PolarAngle){
+        const b = AzimuthalAngle;
+        const c = PolarAngle;
+        const tanb = Math.tan(b);
+        const cosb = Math.cos(b);
+        const cosc = Math.cos(c);
+        const sinc = Math.sin(c);
+
+        // const x = Math.sqrt(Math.pow(tanb,2)*Math.pow(tanc,2)*Math.pow(d,2)/(Math.pow(tanb,2)*Math.pow(tanc,2)+Math.pow(tanb,2)+Math.pow(tanc,2)));
+        const x = tanb * cosb * sinc * d
+        const y = d * cosc;
+        const z = cosb * sinc * d;
+        return [x, y, z];
+      }
+
+      function init(csvArray, meta) {
+        
+        //描画率
+        const density = 0.001 
+
+
+        //ボタンを取得する
+        const rstScr = document.getElementById("reset screen");
+        //ボタンがクリックされたら「resetRecord」を実行する
+        rstScr.addEventListener("click", resetScreen, false);
+
+        //ボタンを取得する
+        const rstTarget = document.getElementById("reset target");
+        //ボタンがクリックされたら「resetRecord」を実行する
+        rstTarget.addEventListener("click", resetTarget, false);
+
+        //ボタンを取得する
+        const axesOn = document.getElementById("axes");
+        //ボタンがクリックされたら「resetRecord」を実行する
+        axesOn.addEventListener("click", axesSwitch, false);
+        
+        // サイズを指定
+        const width = 960;
+        const height = 540;
+
+        // レンダラーを作成
+        const canvasElement = document.querySelector('#myCanvas');
+        const renderer = new THREE.WebGLRenderer({
+          canvas: canvasElement
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+        renderer.toneMapping = THREE.CineonToneMapping;
+
+        // シーンを作成
+        const scene = new THREE.Scene();
+
+        // カメラを作成
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+        // カメラの初期座標を設定
+        camera.position.set(2, 2, 2);
+
+
+        // 座標軸を表示
+        var axes = new THREE.AxisHelper(25);
+        scene.add(axes);
+
+   
+
+        // カメラコントローラーを作成
+        const controls = new THREE.OrbitControls(camera, canvasElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+
+        
+
+        // 平行光源を作成
+        const directionalLight = new THREE.DirectionalLight(0xffffff);
+        directionalLight.position.set(-1, -1, -1);
+        scene.add(directionalLight);
+        // 環境光を追加
+        const ambientLight = new THREE.AmbientLight(0xffffff, 10);
+        scene.add(ambientLight);
+
+
+
+        // GLTF形式のモデルデータを読み込む
+        const loader = new THREE.GLTFLoader();
+        // GLTFファイルのパスを指定
+        // loader.load('./models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf', (gltf) => {
+        
+        const allModels = { 'dm':     './models/gltf/the_death_and_the_mother/scene.gltf', 
+                            'rubic':  './models/gltf/rubic/rubic.gltf'};
+
+        let currentModel;                            
+
+        function modelSelector(addOrRemove, modelName=NaN){
+          if (addOrRemove == 'add'){
+            loader.load(allModels[modelName], (gltf) => {  
+              // 読み込み後に3D空間に追加
+              const model = gltf.scene;
+              scene.add(model);
+              currentModel = model;
+            });
+          } else if (addOrRemove == 'remove'){
+            scene.remove(currentModel);
+          }
+        }
+
+        modelSelector('add','dm');
+
+        function getGradientColor(ratio) {
+          ratio = Math.min(ratio*10, 1);
+          const red = 255;
+          const green = Math.round(255 * (1 - ratio));
+          const blue = Math.round(255 * (1 - ratio));
+          const colorCode = ((red << 16) | (green << 8) | blue).toString(16).padStart(6, '0');
+          return `#${colorCode}`;
+        }
+        
+
+        let d;
+        let aa;
+        let pa;
+        let x_target;
+        let y_target;
+        let z_target;
+        let ms;
+        
+        function organizeCameraLocations(csvArray, meta){
+          let xyzArray=[];
+          let currentIndex = 0;
+          const headMaterial = new THREE.MeshLambertMaterial({ color: 0xffff03});
+          headMaterial.opacity = 0.15;
+          headMaterial.transparent = true;
+          for (eachMeta of meta){
+            let eachCsvArray = csvArray.slice(currentIndex, currentIndex+eachMeta[0]);
+            currentIndex += eachMeta[0];
+            xyzArray.push([]);
+            for (line of eachCsvArray){
+              d = line[0];
+              aa = line[1];
+              pa = line[2];
+              x_target = line[3];
+              y_target = line[4];
+              z_target = line[5];
+              ms = line[6];
+
+          
+              const d_local = d;
+              const AzimuthalAngle = aa;
+              const PolarAngle = pa;
+              //   const xyz_target = controls.target;
+              const xyz_camera_local = calc_xyz(d_local, AzimuthalAngle, PolarAngle);
+              const xyz_camera_global = [Number(xyz_camera_local[0])+Number(x_target), Number(xyz_camera_local[1])+Number(y_target), Number(xyz_camera_local[2])+Number(z_target)];
+              
+              // display by sphere
+
+              if (Math.random()<density){
+                const head = new THREE.Mesh(
+                    //球のジオメトリー（半径,緯度分割数,経度分割数）
+                    new THREE.SphereGeometry(0.5, 32, 32),
+                    headMaterial
+                );
+                head.position.set(xyz_camera_global[0], xyz_camera_global[1], xyz_camera_global[2]);
+                scene.add(head);
+              }
+              xyzArray[xyzArray.length - 1].push([xyz_camera_global[0], xyz_camera_global[1], xyz_camera_global[2]]);
+            }
+
+          }
+          
+          console.log("xyz",xyzArray);
+          return xyzArray;
+        }
+        let xyzArray = organizeCameraLocations(csvArray, meta);
+
+        function partationBySpeheres(increments, offsetCoefficient, xyzArray, meta){
+          // let colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff, 0x800000, 0x008000]; 
+          let offsets = [[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,-1,-1],[-1,-1,-1]]
+          let division = Math.ceil(15/increments);
+          let counts = [];
+          let ratios = [];
+          for (eachXyz of xyzArray){
+            let fileIndex = 0;
+            counts.push([])
+            for (let layer=0; layer<division; layer++){
+              let section = [layer*increments, (layer+1)*increments];
+              
+              for (let i=0; i<8; i++){
+                console.log("meta", meta[fileIndex]);
+                counts[counts.length-1].push(countForEachSpeher(section,offsets[i],eachXyz)/meta[fileIndex][0]);
+              }              
+            }
+            fileIndex ++;
+          }
+          console.log("counts", JSON.stringify(counts));
+          for (let j=counts.length-1; j>0; j--){
+            for (let i=0; i<8; i++){
+              counts[0][i] = Number(counts[0][i]) + Number(counts[j][i]); 
+            }
+            counts.pop();
+          }
+          counts = counts[0];
+          let s = counts.reduce(function(sum, element){ 
+            return sum + element;
+          }, 0);
+          console.log(s);
+          for (let i=0; i<counts.length; i++){
+            ratios.push(counts[i]/s);
+          }
+          console.log(counts);
+          console.log(ratios.join("/"));
+          for (let layer=0; layer<division; layer++){
+            for (let i=0; i<8; i++){
+              // let color = new THREE.Color(colors[i % colors.length]);
+              let j = i % 4;
+              let k = Math.floor(i / 4) * 1;
+              let part = new THREE.Mesh(new THREE.SphereGeometry(increments-offsetCoefficient, 32, 32, Math.PI/2*j, Math.PI/2, Math.PI/2*k, Math.PI/2));
+              let currentRatio = ratios.shift();
+              console.log(currentRatio);
+              // part.material.color = color;
+              // console.log(getGradientColor(currentRatio));
+              // console.log(new THREE.Color(getGradientColor(currentRatio)));
+              part.material.color = new THREE.Color(getGradientColor(currentRatio));
+              part.position.x = offsets[i][0]*(layer*increments+offsetCoefficient);
+              part.position.y = offsets[i][1]*(layer*increments+offsetCoefficient);
+              part.position.z = offsets[i][2]*(layer*increments+offsetCoefficient);
+              scene.add(part);
+            }
+          }
+        }
+
+        function countForEachSpeher(section, whichOrthant, xyzArray){ //partation~の中で実行
+          let count = 0;
+          let all = [];
+          for (line of xyzArray){
+            if (line[0]*whichOrthant[0]>0 && line[1]*whichOrthant[1]>0 && line[2]*whichOrthant[2]>0){ //ターゲットとする象限内の座標かどうか
+              let d_global = Math.sqrt( Math.pow( line[0], 2 ) + Math.pow( line[1], 2 ) + Math.pow( line[2], 2 ) );
+              if (section[0]<d_global && d_global<section[1]){
+                count++;   
+                all.push(line);
+                line.push([section, whichOrthant]);
+              }
+            }
+          }
+          console.log(all, section, whichOrthant);
+          return count;
+        }
+
+        
+        partationBySpeheres(7, 1, xyzArray, meta);
+        console.log(xyzArray);
+
+        loader.load('./models/gltf/rubic/rubic.gltf', (gltf) => {  
+          // 読み込み後に3D空間に追加
+          const model_rubic = gltf.scene;
+        //   scene.add(model_rubic);
+        });
+
+        //ラジオボタンでモデルの変更
+        const CheckBtn = document.getElementById('CheckBtn');
+        CheckBtn.addEventListener('change', function () {
+            console.log(currentModel);
+            console.log(CheckBtn.group.value);
+            if (CheckBtn.group.value == "main"){
+              modelSelector('add', 'dm')  
+            } else if (CheckBtn.group.value == "rubic"){
+              modelSelector('add', 'rubic'); 
+              // modelSelector('add', 'rubic')
+            } else if (CheckBtn.group.value == "remove"){
+              modelSelector('remove'); 
+            }
+        });
+
+
+        function resetTarget(){
+            controls.target.set(0, 0, 0);
+            controls.update();
+
+        }
+
+        function resetCameraPosition(){
+            camera.position.set(2, 2, 2);
+            controls.update();
+
+        }
+
+        function resetScreen(){
+            resetTarget();
+            resetCameraPosition();
+        }
+
+        function axesSwitch(){
+            console.log(scene.children);
+            // console.log(scene.children[0]);
+            if (axesSwitch){
+                scene.remove(axes);
+                controls.update()
+                axesSwitch = false;
+            } else {
+                scene.add(axes);
+                controls.update();
+                axesSwitch = true;
+            }        
+        }
+
+        function checkDistance(d, tf){
+            if (d < 0.01){
+                tf = "<br>ターゲットに近づきすぎています。これ以上はほとんど拡大できません。<br>カメラの位置をリセットするには左下のボタンを押してください。";
+            }　else if (d > 250){
+                tf = "<br>ターゲットから離れすぎています。<br>カメラの位置をリセットするには左下のボタンを押してください。";
+            } else {
+                tf = "";
+            }
+            return tf;
+        }
+        
+    
+
+        var callbackId;
+        console.log("aaaa",camera.position[["x"]]);
+        
+        tick();
+        // 毎フレーム時に実行されるループイベントです
+
+        
+        function tick() {
+          // レンダリング
+            renderer.render(scene, camera);
+            const tf = document.getElementById('hud');
+            let x = camera.position[["x"]];
+            let y = camera.position[["y"]];
+            let z = camera.position[["z"]];
+            let d = Math.sqrt(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2));
+
+            tf.innerHTML = `camera: [${Math.round(x*100)/100},${Math.round(y*100)/100},${Math.round(z*100)/100}]<br>
+            distance from the sculpture: ${d}<br>`;
+            callbackId = requestAnimationFrame(tick);          
+        }
+
+
+        document.getElementById( "cancel" ).onclick = function() {
+            cancelAnimationFrame( callbackId ) ;
+        }
+       
+
+      }
+      let checkButton = document.getElementById('check');
+      checkButton.addEventListener('click', buttonClick);
+      let fileBox = document.getElementById('upload');
+
+
+    </script>
+    </body>
+  
+</html>

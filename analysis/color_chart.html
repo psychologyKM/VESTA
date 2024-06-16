@@ -1,0 +1,122 @@
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <script src="https://unpkg.com/three@0.140.2/build/three.min.js"></script>
+        <script src="https://unpkg.com/three@0.137.4/examples/js/controls/OrbitControls.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/sprintf/1.1.2/sprintf.min.js"></script>
+    </head>
+    <body>
+        <canvas id="myCanvas"width="960" height="540"></canvas>
+        <div id="hud" style="position: absolute; top: 8; left: 8; background: transparent; color: green"></div>
+        <form name="form1">
+            <button type="button" name="button1">SAVE PNG</button>
+        </form>
+        <script>
+            window.addEventListener('DOMContentLoaded', init);  
+            function init(csvArray, meta, csvArray2, meta2, csvArray3, meta3, crtImgOnce) {
+                const width = 960;
+                const height = 540;
+                canvasElement = document.querySelector('#myCanvas');
+                renderer = new THREE.WebGLRenderer({
+                canvas: canvasElement
+                });
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.setSize(width, height);
+                renderer.toneMapping = THREE.CineonToneMapping;
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+                camera.position.set(0, 0, 100);
+                const controls = new THREE.OrbitControls(camera, canvasElement);
+                controls.target.set(0, 0, 0);
+                controls.update();
+                const directionalLight = new THREE.DirectionalLight(0xffffff);
+                directionalLight.position.set(-1, -1, -1);
+                scene.add(directionalLight);
+                const ambientLight = new THREE.AmbientLight(0xffffff, 10);
+                scene.add(ambientLight);
+                addColorCircles(8);
+
+                function addColorCircles(resolution){
+                    const root3 = Math.pow(3, 0.5);
+                    console.log(root3);
+                    var geometry = new THREE.CircleGeometry( 0.5, 200 );
+                    let origin = [0, resolution];
+                    for(let i=0; i<resolution; i++){
+                        for(let j=0; j<(resolution+1); j++){
+                            let xyCenter = [origin[0]+(i-j)*root3*0.5, origin[1]-(i+j)*0.5];
+                            let material = new THREE.MeshLambertMaterial({color: new THREE.Color(1, Math.pow(0.5, resolution-j), Math.pow(0.5, resolution-i))});
+                            material.transparent = true;
+                            material.opacity = 0.8; 
+                            let circle = new THREE.Mesh(geometry, material);
+                            circle.position.set(xyCenter[0], xyCenter[1], 0);
+                            scene.add(circle);
+                        }
+                    }
+                    origin = [resolution*root3*-0.5, resolution*-0.5];
+                    for(let i=0; i<resolution; i++){
+                        for(let j=0; j<(resolution+1); j++){
+                            let xyCenter = [origin[0]+j*root3*0.5, origin[1]+i-j*0.5];
+                            let material = new THREE.MeshLambertMaterial({color: new THREE.Color(Math.pow(0.5, resolution-i), 1, Math.pow(0.5, resolution-j))});
+                            material.transparent = true;
+                            material.opacity = 0.8; 
+                            let circle = new THREE.Mesh( geometry, material);
+                            circle.position.set(xyCenter[0], xyCenter[1], 0);
+                            scene.add(circle);
+                        }
+                    }
+                    origin = [resolution*root3*0.5, resolution*-0.5];
+                    for(let i=0; i<resolution; i++){
+                        for(let j=0; j<(resolution+1); j++){
+                            let xyCenter = [origin[0]-i*root3*0.5, origin[1]+j-i*0.5];
+                            let material = new THREE.MeshLambertMaterial({color: new THREE.Color(Math.pow(0.5, resolution-j), Math.pow(0.5, resolution-i), 1)});
+                            material.transparent = true;
+                            material.opacity = 0.8; 
+                            let circle = new THREE.Mesh( geometry, material);
+                            circle.position.set(xyCenter[0], xyCenter[1], 0);
+                            scene.add(circle);
+                        }
+                    }
+                    let xyCenter = [0, 0];
+                    let material = new THREE.MeshLambertMaterial({color: new THREE.Color(1,1,1)});
+                    material.transparent = true;
+                    material.opacity = 0.8; 
+                    let circle = new THREE.Mesh( geometry, material);
+                    circle.position.set(xyCenter[0], xyCenter[1], 0);
+                    scene.add(circle);
+                }
+
+                let callbackId;
+                
+                tick();
+
+                function tick() {
+                    renderer.render(scene, camera);
+                    const tf = document.getElementById('hud');
+                    let x = camera.position[["x"]];
+                    let y = camera.position[["y"]];
+                    let z = camera.position[["z"]];
+                    let d = Math.sqrt(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2));
+                    tf.innerHTML = `camera: [${Math.round(x*100)/100},${Math.round(y*100)/100},${Math.round(z*100)/100}]<br>
+                    distance from the sculpture: ${Math.round(d*100)/100}<br>`;
+                    callbackId = requestAnimationFrame(tick);          
+                }
+            }
+
+            function savePNG(){
+                canvasElement.getContext( 'webgl2', { antialias: true, preserveDrawingBuffer: true });
+                renderer.render(scene, camera);
+                renderer.domElement.toBlob( function ( blob ) {
+                const BLOB_URL = URL.createObjectURL( blob );
+                const A = document.createElement( 'a' );
+                A.download = 'pngfile.png';
+                A.href = BLOB_URL;
+                A.click();
+                URL.revokeObjectURL( BLOB_URL );
+                }, 'image/png' );
+                canvasElement.getContext( 'webgl2', { antialias: true, preserveDrawingBuffer: false });
+            }
+            
+            document.form1.button1.addEventListener( 'click', savePNG , false );
+        </script>
+    </body>
+</html>

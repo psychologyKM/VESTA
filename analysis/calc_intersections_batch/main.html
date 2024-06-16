@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    <title>main</title>
+    <script src="getFns1I.js"></script>
+    </head>
+    <body>
+    <script>
+        const tsvFiles = getFns1I();
+        const url = new URL(window.location.href);
+        const start = parseInt(url.searchParams.get('start'));
+        const dir= url.searchParams.get('dir');
+        let currentIndex = 0;
+        if (!isNaN(start)){
+            currentIndex = start;
+        } 
+        let currentDir = "test/"
+        if (dir!==null){
+            currentDir = dir+"/";
+            console.log("here");
+        } 
+        console.log(currentDir);
+
+        async function exists(tsvdir) {
+            try {
+                const response = await fetch(tsvdir);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        console.log("skipped:", tsvdir);
+                        return false;
+                    } else {
+                        throw new Error('something error');
+                    }
+                }
+                return true;
+            } catch (error) {
+                console.error('Error:', error);
+                return false;
+            }
+        }
+
+        async function checkFiles(tsvFiles) {
+            while (currentIndex < tsvFiles.length) {
+                let tsvdir = '../../data/tsv_raw/' + currentDir + tsvFiles[currentIndex];
+                const fileExists = await exists(tsvdir);
+                if (fileExists) {
+                    console.log("File exists:", tsvdir);
+                    break;
+                } else {
+                    currentIndex += 1;
+                    console.log(currentIndex);
+                }
+            }
+            return Promise.resolve();
+        }
+
+        checkFiles(tsvFiles)
+        .then(()=>{
+            if(currentIndex < tsvFiles.length){
+                init('../../data/tsv_raw/' + currentDir + tsvFiles[currentIndex]);
+            } else {
+              console.log("completed");
+            }
+        });
+
+        
+        function init(tsvdir){
+            const newTab = window.open(url.href.slice(0, url.href.lastIndexOf('/'))+'/calcInitiator.html');
+            newTab.onload = function() {
+                newTab.fetchTSV(tsvdir, currentIndex, currentDir);
+            };
+        }
+    </script>
+    </body>
+</html>

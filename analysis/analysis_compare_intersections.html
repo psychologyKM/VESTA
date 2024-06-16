@@ -1,0 +1,472 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://unpkg.com/three@0.140.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sprintf/1.1.2/sprintf.min.js"></script>
+    <script src="cutDefaultIntersects.js"></script>
+  </head>
+    <body>
+    <canvas id="myCanvas"width="960" height="540"></canvas>
+    <div id="hud" style="position: absolute; top: 8; left: 8; background: transparent; color: green"></div>
+    <br>
+    <button id="reset screen" type="button">Reset Screen</button>
+    <br>
+    <button id="reset target" type="button">Reset Target</button>
+    <br>
+    <button id="axes" type="button">Axes ON/OFF</button>
+    <br>
+    <div>
+    <input type="file" multiple name="f1" id="upload1">
+    <input type="file" multiple name="f2" id="upload2">
+    <input type="file" multiple name="f3" id="upload3">
+    </div>     
+    <div>
+    <input type="button" value="START" id="start">
+    </div>
+    <form name="form1">
+        <button type="button" name="button1">SAVE PNG</button>
+    </form>
+    <script>
+        const url = new URL(window.location.href);
+        let defaultCameraX = parseFloat(url.searchParams.get('x'));
+        let defaultCameraY = parseFloat(url.searchParams.get('y'));
+        let defaultCameraZ = parseFloat(url.searchParams.get('z'));
+        if(isNaN(defaultCameraX)){
+            defaultCameraX = 2;
+        }
+        if(isNaN(defaultCameraY)){
+            defaultCameraY = 2;
+        }
+        if(isNaN(defaultCameraZ)){
+            defaultCameraZ = 2;
+        }
+
+        function tsvToAry(file) {
+            return new Promise(resolve => {
+                let result = [];
+                let reader = new FileReader();
+                reader.readAsText(file);
+                reader.onload = function() {
+                let lines = reader.result.split('\n');
+                lines = lines.filter(str => str !== "");
+                for(let i = 0; i < lines.length; i++) {
+                    let data = lines[i].split('\t');
+                    result.push(data);
+                }
+                resolve(result);
+                };
+            });
+        }
+
+        function buttonClick(){
+            let files1 = fileBox1.files;
+            let files2 = fileBox2.files;
+            let files3 = fileBox3.files;
+            let promises1 = [];
+            let promises2 = [];
+            let promises3 = [];
+            for(let i=0; i<files1.length; i++){
+                promises1.push(tsvToAry(files1[i]));
+            }
+            for(let i=0; i<files2.length; i++){
+                promises2.push(tsvToAry(files2[i]));
+            }
+            for(let i=0; i<files3.length; i++){
+                promises3.push(tsvToAry(files3[i]));
+            }
+
+            Promise.all([...promises1, ...promises2, ...promises3])
+                .then((results) => {
+                    const result1 = results.slice(0, promises1.length);
+                    const result2 = results.slice(promises1.length, promises1.length+promises2.length);
+                    const result3 = results.slice(promises1.length+promises2.length);
+                    let allData1 = [];
+                    let allMeta1 = [];
+                    for(let i = 0; i < result1.length; i++) {
+                        allData1 = allData1.concat(result1[i]);
+                        allMeta1.push([result1[i].length]);
+                    }      
+                    let allData2 = [];
+                    let allMeta2 = [];
+                    for(let i = 0; i < result2.length; i++) {
+                        allData2 = allData2.concat(result2[i]);
+                        allMeta2.push([result2[i].length]);
+                    }    
+                    let allData3 = [];
+                    let allMeta3 = [];
+                    for(let i = 0; i < result3.length; i++) {
+                        allData3 = allData3.concat(result3[i]);
+                        allMeta3.push([result3[i].length]);
+                    }                
+                    init(allData1, allMeta1, allData2, allMeta2, allData3, allMeta3);
+                })
+                .catch((error) => {
+                    console.error("Error:", error);
+            });
+
+        } 
+
+        let axesSwitch = true;
+
+        function init(csvArray1, meta1, csvArray2, meta2, csvArray3, meta3) {
+
+            const rstScr = document.getElementById("reset screen");
+            const rstTarget = document.getElementById("reset target");
+            const axesOn = document.getElementById("axes");
+            rstScr.addEventListener("click", resetScreen, false);
+            rstTarget.addEventListener("click", resetTarget, false);
+            axesOn.addEventListener("click", axesSwitch, false);
+            
+            const width = 960;
+            const height = 540;
+
+            canvasElement = document.querySelector('#myCanvas');
+            renderer = new THREE.WebGLRenderer({
+            canvas: canvasElement,
+            antialias: true
+            });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(width, height);
+            renderer.toneMapping = THREE.CineonToneMapping;
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+            camera.position.set(defaultCameraX, defaultCameraY, defaultCameraZ);
+            let axes = new THREE.AxisHelper(25);
+            scene.add(axes);
+            const controls = new THREE.OrbitControls(camera, canvasElement);
+            controls.target.set(0, 0, 0);
+            controls.update();
+            const directionalLight = new THREE.DirectionalLight(0xffffff);
+            directionalLight.position.set(-1, -1, -1);
+            scene.add(directionalLight);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 10);
+            scene.add(ambientLight);
+
+            const loader = new THREE.GLTFLoader();
+            const allModels = { 'dm': '../model/gltf/the_death_and_the_mother/scene.gltf',
+                                'eg': '../model/gltf/earth_globe_size_modified/earth_globe_size_modified.gltf'};
+            let currentModel;                            
+
+            function modelSelector(addOrRemove, modelName=NaN){
+            if (addOrRemove == 'add'){
+                loader.load(allModels[modelName], (gltf) => {  
+                const model = gltf.scene;
+                scene.add(model);
+                currentModel = model;
+                });
+            } else if (addOrRemove == 'remove'){
+                scene.remove(currentModel);
+            }
+            }
+
+            modelSelector('add','dm');
+
+            function getGradientColor(ratio) {
+            ratio = Math.min(ratio*500, 1);
+            const red = 255;
+            const green = Math.round(255 * (1 - ratio));
+            const blue = Math.round(255 * (1 - ratio));
+            const colorCode = ((red << 16) | (green << 8) | blue).toString(16).padStart(6, '0');
+            return `#${colorCode}`;
+            }
+
+            function convertToRGB(array) {
+                const convertedArray = array.map(value => Math.round(value * 255));
+                const hex = convertedArray.reduce((acc, value) => {
+                    const hexValue = value.toString(16).padStart(2, '0');
+                    return acc + hexValue;
+                }, '0x');
+                return hex.toUpperCase();
+            }
+            
+            function organizeCameraLocations(csvArray, meta){
+            let xyzArray=[];
+            let currentIndex = 0;
+            const headMaterial = new THREE.MeshLambertMaterial({ color: 0xffff03});
+            headMaterial.opacity = 0.15;
+            headMaterial.transparent = true;
+            for (eachMeta of meta){
+                let eachCsvArray = csvArray.slice(currentIndex, currentIndex+eachMeta[0]);
+                currentIndex += eachMeta[0];
+                xyzArray.push([]);
+                for (line of eachCsvArray){
+                xyzArray[xyzArray.length - 1].push([parseFloat(line[0]),parseFloat(line[1]),parseFloat(line[2])]);
+                }
+            }
+            return xyzArray;
+            }
+
+            let xyzArray1 = organizeCameraLocations(csvArray1, meta1);
+            let xyzArray2 = organizeCameraLocations(csvArray2, meta2);
+            let xyzArray3 = organizeCameraLocations(csvArray3, meta3);
+        
+            function create3DArray(a, b, c) {
+                return Array.from({ length: a }, () =>
+                    Array.from({ length: b }, () => Array(c).fill(0))
+                );
+            }
+
+            function calculateSum(arr) {
+                return Array.isArray(arr) ? arr.reduce((sum, el) => sum + calculateSum(el), 0) : arr;
+            }
+
+            function getTopIndicesAndValues(arr, m) {
+                const flattenArray = (array, prefix = []) =>
+                    array.reduce((acc, el, i) => {
+                    const currentPath = [...prefix, i];
+                    return acc.concat(Array.isArray(el) ? flattenArray(el, currentPath) : { value: el, path: currentPath });
+                    }, []);
+
+                const flatArray = flattenArray(arr);
+                const sortedArray = flatArray.sort((a, b) => b.value - a.value).slice(0, m);
+                return sortedArray.map(item => ({ path: item.path, value: item.value }));
+            }
+
+            function subtract3DArrays(arr1, arr2) {
+                if (
+                    arr1.length !== arr2.length ||
+                    arr1[0].length !== arr2[0].length ||
+                    arr1[0][0].length !== arr2[0][0].length
+                ) {
+                    throw new Error("arrays have different shapes");
+                }
+                const result = [];
+                for (let i = 0; i < arr1.length; i++) {
+                    const outerRow = [];
+                    for (let j = 0; j < arr1[i].length; j++) {
+                        const innerRow = [];
+                        for (let k = 0; k < arr1[i][j].length; k++) {
+                            innerRow.push(Math.max(0,arr1[i][j][k] - arr2[i][j][k]));
+                        }
+                        outerRow.push(innerRow);
+                    }
+                    result.push(outerRow);
+                }
+                return result;
+            }
+
+            function add3DArrays(arr1, arr2) {
+                if (
+                    arr1.length !== arr2.length ||
+                    arr1[0].length !== arr2[0].length ||
+                    arr1[0][0].length !== arr2[0][0].length
+                ) {
+                    throw new Error("arrays have different shapes");
+                }
+                const result = [];
+                for (let i = 0; i < arr1.length; i++) {
+                    const outerRow = [];
+                    for (let j = 0; j < arr1[i].length; j++) {
+                        const innerRow = [];
+                        for (let k = 0; k < arr1[i][j].length; k++) {
+                            innerRow.push(Math.max(0,arr1[i][j][k] + arr2[i][j][k]));
+                        }
+                        outerRow.push(innerRow);
+                    }
+                    result.push(outerRow);
+                }
+                return result;
+            }
+            
+            function multiple3DArrays(arr1, n) {
+                const result = [];
+                for (let i = 0; i < arr1.length; i++) {
+                    const outerRow = [];
+                    for (let j = 0; j < arr1[i].length; j++) {
+                        const innerRow = [];
+                        for (let k = 0; k < arr1[i][j].length; k++) {
+                            innerRow.push(arr1[i][j][k]*n);
+                        }
+                        outerRow.push(innerRow);
+                    }
+                    result.push(outerRow);
+                }
+                return result;
+            }
+
+            function ReLU3DArrays(arr1) {
+                const result = [];
+                for (let i = 0; i < arr1.length; i++) {
+                    const outerRow = [];
+                    for (let j = 0; j < arr1[i].length; j++) {
+                        const innerRow = [];
+                        for (let k = 0; k < arr1[i][j].length; k++) {
+                            innerRow.push(Math.max(0,arr1[i][j][k]));
+                        }
+                        outerRow.push(innerRow);
+                    }
+                    result.push(outerRow);
+                }
+                return result;
+            }
+
+            function partationByCubes(size, increments, xyzArray1, meta1, xyzArray2, meta2, xyzArray3, meta3){
+                let cubesR = create3DArray((size*2/increments), (size*2/increments), (size*2/increments));
+                let cubesG = create3DArray((size*2/increments), (size*2/increments), (size*2/increments));
+                let cubesB = create3DArray((size*2/increments), (size*2/increments), (size*2/increments));
+                let n_points = 0;
+                for (xyz of xyzArray1){
+                    xyz = cutDefaultIntersects(xyz);         
+                    let n_start = 0
+                    let n_end = xyz.length
+                    xyz = xyz.slice(n_start, n_end);
+                    for (eachPoint of xyz){
+                        let i0 = Math.floor((eachPoint[0]+size)/increments);
+                        let i1 = Math.floor((eachPoint[1]+size)/increments);
+                        let i2 = Math.floor((eachPoint[2]+size)/increments);
+                        cubesR[i0][i1][i2] += (1/(xyz.length*xyzArray1.length));  
+                        n_points++;
+                    }
+                }
+                for (xyz of xyzArray2){
+                    xyz = cutDefaultIntersects(xyz);         
+                    let n_start = 0
+                    let n_end = xyz.length
+                    xyz = xyz.slice(n_start, n_end);
+                    for (eachPoint of xyz){
+                        let i0 = Math.floor((eachPoint[0]+size)/increments);
+                        let i1 = Math.floor((eachPoint[1]+size)/increments);
+                        let i2 = Math.floor((eachPoint[2]+size)/increments);
+                        cubesG[i0][i1][i2] += (1/(xyz.length*xyzArray2.length));  
+                        n_points++;
+                    }
+                }
+                for (xyz of xyzArray3){
+                    xyz = cutDefaultIntersects(xyz);         
+                    let n_start = 0
+                    let n_end = xyz.length
+                    xyz = xyz.slice(n_start, n_end);
+                    for (eachPoint of xyz){
+                        let i0 = Math.floor((eachPoint[0]+size)/increments);
+                        let i1 = Math.floor((eachPoint[1]+size)/increments);
+                        let i2 = Math.floor((eachPoint[2]+size)/increments);
+                        cubesB[i0][i1][i2] += (1/(xyz.length*xyzArray3.length));  
+                        n_points++;
+                    }
+                }
+
+                console.log(n_points);
+                console.log(calculateSum(cubesR));
+                console.log(calculateSum(cubesG));
+                console.log(calculateSum(cubesB));
+
+            function processEachCubeByRGB(cubesR, cubesG, cubesB){
+                for (let i = 0; i < cubesR.length; i++) {
+                    for (let j = 0; j < cubesR[i].length; j++) {
+                        for (let k = 0; k < cubesR[i][j].length; k++) {
+                            let denom = Math.max(cubesR[i][j][k], cubesG[i][j][k], cubesB[i][j][k]);
+                            if (denom !== 0) {
+                                let elements = [cubesR[i][j][k]/denom, cubesG[i][j][k]/denom, cubesB[i][j][k]/denom];
+                                let ratioForSize = 0.01;
+                                let geometry = new THREE.BoxGeometry(Math.pow(increments*ratioForSize,0.333), Math.pow(increments*ratioForSize,0.333), Math.pow(increments*ratioForSize,0.333));// 立方体
+                                let material = new THREE.MeshLambertMaterial({color: new THREE.Color(Math.pow(elements[0],5), Math.pow(elements[1],5), Math.pow(elements[2],5))});
+                                if (Math.pow(elements[0],5)+Math.pow(elements[1],5)+Math.pow(elements[2],5) > 2.25){
+                                    continue;
+                                }
+                                material.transparent = true;
+                                material.opacity = 0.8; 
+                                let cube = new THREE.Mesh(geometry, material);
+                                cube.position.set(-1*size+0.5*increments+i*increments,-1*size+0.5*increments+j*increments,-1*size+0.5*increments+k*increments);
+                                const icosahedronLine = new THREE.LineSegments(
+                                    new THREE.EdgesGeometry(geometry),
+                                    new THREE.LineBasicMaterial({ color: 0x000000 })
+                                );
+                                cube.add(icosahedronLine);
+                                scene.add(cube);
+                            }
+                        }
+                    }
+                }
+            }
+
+                processEachCubeByRGB(cubesR, cubesG, cubesB);     
+            }
+
+            function countForEachSpeher(section, whichOrthant, xyzArray){
+            let count = 0;
+            let all = [];
+            for (line of xyzArray){
+                if (line[0]*whichOrthant[0]>0 && line[1]*whichOrthant[1]>0 && line[2]*whichOrthant[2]>0){
+                let d_global = Math.sqrt( Math.pow( line[0], 2 ) + Math.pow( line[1], 2 ) + Math.pow( line[2], 2 ) );
+                if (section[0]<d_global && d_global<section[1]){
+                    count++;   
+                    all.push(line);
+                    line.push([section, whichOrthant]);
+                }
+                }
+            }
+            return count;
+            }
+
+            partationByCubes(4, 0.4, xyzArray1, meta1, xyzArray2, meta2, xyzArray3, meta3);
+
+            function resetTarget(){
+                controls.target.set(0, 0, 0);
+                controls.update();
+            }
+
+            function resetCameraPosition(){
+                camera.position.set(defaultCameraX, defaultCameraY, defaultCameraZ);
+                controls.update();
+            }
+
+            function resetScreen(){
+                resetTarget();
+                resetCameraPosition();
+            }
+
+            function axesSwitch(){
+                console.log(scene.children);
+                if (axesSwitch){
+                    scene.remove(axes);
+                    controls.update()
+                    axesSwitch = false;
+                } else {
+                    scene.add(axes);
+                    controls.update();
+                    axesSwitch = true;
+                }        
+            }
+
+            let callbackId;        
+            tick();
+            
+            function tick() {
+                renderer.render(scene, camera);
+                const tf = document.getElementById('hud');
+                let x = camera.position[["x"]];
+                let y = camera.position[["y"]];
+                let z = camera.position[["z"]];
+                let d = Math.sqrt(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2));
+                tf.innerHTML = `camera: [${Math.round(x*100)/100},${Math.round(y*100)/100},${Math.round(z*100)/100}]<br>
+                distance from the sculpture: ${Math.round(d*100)/100}<br>`;
+                callbackId = requestAnimationFrame(tick);          
+            }
+        }
+
+        function savePNG(){
+            canvasElement.getContext( 'webgl2', { antialias: true, preserveDrawingBuffer: true });
+            renderer.render(scene, camera);
+            renderer.domElement.toBlob( function ( blob ) {
+            const BLOB_URL = URL.createObjectURL( blob );
+            const A = document.createElement( 'a' );
+            A.download = 'pngfile.png';
+            A.href = BLOB_URL;
+            A.click();
+            URL.revokeObjectURL( BLOB_URL );
+            }, 'image/png' );
+            canvasElement.getContext( 'webgl2', { antialias: true, preserveDrawingBuffer: false });
+        }
+        
+        let checkButton = document.getElementById('start');
+        checkButton.addEventListener('click', buttonClick);
+        let fileBox1 = document.getElementById('upload1');
+        let fileBox2 = document.getElementById('upload2');        
+        let fileBox3 = document.getElementById('upload3');
+        document.form1.button1.addEventListener( 'click', savePNG , false );
+
+    </script>
+    </body>
+</html>

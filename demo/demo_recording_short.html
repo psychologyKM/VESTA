@@ -1,0 +1,190 @@
+  <html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://unpkg.com/three@0.140.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sprintf/1.1.2/sprintf.min.js"></script>
+    <script>
+      const duration = 20; //[sec]
+
+      viewing_array = [["d","aa","pa","x_target","y_target","z_target","ms"]];
+
+      function downloadTSV(){
+        const time_date= new Date();
+        const year = time_date.getFullYear();
+        const month = time_date.getMonth()+1;
+        const date = time_date.getDate();
+        const hour = time_date.getHours();
+        const minute = time_date.getMinutes();
+        const second = time_date.getSeconds();
+        const filename =  month +'_'+ date +'_'+ hour +'_'+ minute +'_'+ second + ".tsv";
+        const data = viewing_array;
+        let tsv_string  = ""; 
+        for (let d of data) {
+          tsv_string += d.join("\t");
+          tsv_string += '\r\n';
+        }   
+        let blob = new Blob([tsv_string], {type: "text/csv"});
+        if (window.navigator.msSaveBlob) {
+          window.navigator.msSaveBlob(blob, filename);
+        } else {
+          const url = (window.URL || window.webkitURL).createObjectURL(blob);
+          const download = document.createElement("a");
+          download.href = url;
+          download.download = filename;
+          download.click();
+          (window.URL || window.webkitURL).revokeObjectURL(url);
+        }
+      }
+
+      function init() {
+        const download = document.getElementById("download");
+        const rstScr = document.getElementById("reset screen");
+        const rstTarget = document.getElementById("reset target");
+        const exitLoop = document.getElementById("download");
+        download.style.visibility="hidden";
+        download.addEventListener("click", downloadTSV, false);
+        rstScr.addEventListener("click", resetScreen, false);
+        rstTarget.addEventListener("click", resetTarget, false);
+
+        let loopFlag = false;
+        const setLoopFlag = function(){
+            loopFlag = true;
+        }
+        exitLoop.addEventListener("click", setLoopFlag, false);
+        
+        const width = 960;
+        const height = 540;
+
+        const canvasElement = document.querySelector('#myCanvas');
+        const renderer = new THREE.WebGLRenderer({
+          canvas: canvasElement,
+          antialias: true
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+        renderer.toneMapping = THREE.CineonToneMapping;
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+        // camera.position.set(7.8, 0.1, -3.9); //for the model 'dm'
+        camera.position.set(0, 20, 20);
+        const controls = new THREE.OrbitControls(camera, canvasElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+        const directionalLight = new THREE.DirectionalLight(0xffffff);
+        directionalLight.position.set(1, -1, -1);
+        scene.add(directionalLight);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 8.5);
+        scene.add(ambientLight);
+        let loadedTime = 0;
+        const manager = new THREE.LoadingManager();
+        manager.onStart = function ( url, itemsLoaded, itemsTotal ) {
+          console.log( 'Started loading file');
+        };
+        manager.onLoad = function ( ) {
+          console.log( 'Loading complete!');
+          loadedTime = Date.now();
+        };
+
+        const loader = new THREE.GLTFLoader(manager);
+        const allModels = { 'dm': '../model/gltf/the_death_and_the_mother/scene.gltf',
+                            'eg': '../model/gltf/earth_globe_size_modified/earth_globe_size_modified.gltf'};
+        let currentModel;                            
+
+        function modelSelector(addOrRemove, modelName=NaN){
+          if (addOrRemove == 'add'){
+            loader.load(allModels[modelName], (gltf) => {  
+              const model = gltf.scene;
+              scene.add(model);
+              currentModel = model;
+              renderer.render(scene, camera);
+            });
+          } else if (addOrRemove == 'remove'){
+            scene.remove(currentModel);
+          }
+        }
+        
+        modelSelector('add','eg');
+
+        function resetTarget(){
+          controls.target.set(0, 0, 0);
+          controls.update();
+        }
+
+        function resetCameraPosition(){
+          // camera.position.set(7.8, 0.1, -3.9); //for the model 'dm'
+          camera.position.set(17.8, 15, -13.9);
+          controls.update();
+        }
+
+        function resetScreen(){
+          resetTarget();
+          resetCameraPosition();
+        }
+
+        function checkDistance(d, tf){
+          if (d < 0.01){
+            tf = "You are too close to the target.<br>To reset the camera position, please press the button at the bottom left.";
+          }　else if (d > 250){
+            tf = "You are too far from the target.<br>To reset the camera position, please press the button at the bottom left.";
+          } else {
+            tf = "";
+          }
+          return tf;
+        }
+        
+        tick();
+
+        function tick() {
+          const ms = Date.now();
+          const tf = document.getElementById('hud');
+          const timer = document.getElementById("timer");
+          renderer.render(scene, camera);
+          if (!loopFlag){
+            requestAnimationFrame(tick);
+            if (loadedTime !== 0){
+              let timerText = +Math.floor(duration-((ms-loadedTime)/1000))+"seconds remaining";
+              timer.textContent = timerText;
+              if (ms - loadedTime > duration*1000){
+                console.log("time out");
+                loopFlag = true;
+              }
+              const d_local = controls.getDistance();
+              const AzimuthalAngle = controls.getAzimuthalAngle();
+              const PolarAngle = controls.getPolarAngle ();
+              const xyz_target = controls.target;
+              tf.innerHTML = checkDistance(d_local);
+              viewing_array.push([d_local, AzimuthalAngle, PolarAngle, controls.target[["x"]],controls.target[["y"]],controls.target[["z"]],ms]);
+            }
+          } else {
+              let canvas_element = document.getElementById("myCanvas");
+              tf.innerHTML = `${duration} seconds have passed. Please press the 'Download' button below to get the record.<br>`
+              timer.textContent = "";
+              canvas_element.remove();
+              download.style.visibility="visible";
+              rstTarget.remove();
+              rstScr.remove();
+          }
+        }
+      }
+
+      if (document.readyState !== "loading"){
+        init();
+      } else {
+        document.addEventListener('DOMContentLoaded', init, false);       
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="myCanvas"></canvas>
+    <div id="hud" style="position: relative; top: 8; left: 8; background: transparent; color: green"></div>
+    <p id="timer"></p>
+    <button id="reset screen" type="button">reset screen</button>
+    <br>
+    <button id="reset target" type="button">turn to object</button>
+    <br>
+    <button type="button" id="download">Download</button>
+    <br>
+  </body>
+</html>

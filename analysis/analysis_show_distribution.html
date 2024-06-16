@@ -1,0 +1,195 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://unpkg.com/three@0.140.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.137.4/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sprintf/1.1.2/sprintf.min.js"></script>
+  </head>
+  <body>
+    <canvas id="myCanvas"></canvas>
+    <div id="hud" style="position: absolute; top: 8; left: 8; background: transparent; color: green"></div>
+    <div><input type="file" multiple id="upload"></div>        
+    <div><input type="button" value="START" id="start"></div>
+    <br>
+    <button id="axes" type="button">Axes ON/OFF</button>
+    <br>
+
+    <script>
+      function tsvToAry(file) {
+        return new Promise(resolve => {
+          let result = [];
+          let reader = new FileReader();
+          reader.readAsText(file);
+          reader.onload = function() {
+          let lines = reader.result.split('\n');
+          lines = lines.filter(str => str !== "");
+          for(let i = 1; i < lines.length; i++) {
+            let data = lines[i].split('\t');
+            result.push(data);
+          }
+          resolve(result);
+          };
+        });
+      }
+
+      function startCalc(){
+        let files = fileBox.files;
+        let promises = [];
+        let allData = [];
+        for(let i=0; i<files.length; i++){
+          promises.push(tsvToAry(files[i]));
+        }
+        Promise.all(promises).then(result => {
+            let allData = [];
+            let allMeta = [];
+            for(let i = 0; i < result.length; i++) {
+              allData = allData.concat(result[i]);
+              allMeta.push([result[i].length,files[i]]);
+            }                
+            init(allData, allMeta);
+        });
+      } 
+
+      function tfCoord(d, AzimuthalAngle, PolarAngle){
+        const b = AzimuthalAngle;
+        const c = PolarAngle;
+        const tanb = Math.tan(b);
+        const cosb = Math.cos(b);
+        const cosc = Math.cos(c);
+        const sinc = Math.sin(c);
+        const x = tanb * cosb * sinc * d
+        const y = d * cosc;
+        const z = cosb * sinc * d;
+        return [x, y, z];
+      }
+
+      function init(tsvArray, meta) {
+        const density = 0.01;
+
+        const axesOn = document.getElementById("axes");
+        axesOn.addEventListener("click", axesSwitch, false);
+        const width = 960;
+        const height = 540;
+        const canvasElement = document.querySelector('#myCanvas');
+        const renderer = new THREE.WebGLRenderer({
+          canvas: canvasElement
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+        renderer.toneMapping = THREE.CineonToneMapping;
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+        camera.position.set(0, 30, 0);
+        camera.up.set(-1, 0, -2);
+        let axes = new THREE.AxisHelper(25);
+        scene.add(axes);
+        const controls = new THREE.OrbitControls(camera, canvasElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+        const directionalLight = new THREE.DirectionalLight(0xffffff);
+        directionalLight.position.set(-1, -1, -1);
+        scene.add(directionalLight);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 10);
+        scene.add(ambientLight);
+
+        const loader = new THREE.GLTFLoader();
+        const allModels = { 'dm': '../model/gltf/the_death_and_the_mother/scene.gltf',
+                            'eg': '../model/gltf/earth_globe_size_modified/earth_globe_size_modified.gltf'};
+        let currentModel;                            
+
+        function modelSelector(addOrRemove, modelName=NaN){
+          if (addOrRemove == 'add'){
+            loader.load(allModels[modelName], (gltf) => {  
+              const model = gltf.scene;
+              scene.add(model);
+              currentModel = model;
+            });
+          } else if (addOrRemove == 'remove'){
+            scene.remove(currentModel);
+          }
+        }
+
+        modelSelector('add','eg');
+
+        let d;
+        let aa;
+        let pa;
+        let x_target;
+        let y_target;
+        let z_target;
+        let ms;
+        
+        function organizeCameraLocations(tsvArray, meta){
+          let xyzArray=[];
+          let currentIndex = 0;
+          const headMaterial = new THREE.MeshLambertMaterial({ color: 0xffff03});
+          headMaterial.opacity = 0.015;
+          headMaterial.transparent = true;
+          for (eachMeta of meta){
+            let eachTsvArray = tsvArray.slice(currentIndex, currentIndex+eachMeta[0]);
+            currentIndex += eachMeta[0];
+            xyzArray.push([]);
+            for (line of eachTsvArray){
+              d = line[0];
+              aa = line[1];
+              pa = line[2];
+              x_target = line[3];
+              y_target = line[4];
+              z_target = line[5];
+              ms = line[6];
+              const d_local = d;
+              const AzimuthalAngle = aa;
+              const PolarAngle = pa;
+              const xyz_camera_local = tfCoord(d_local, AzimuthalAngle, PolarAngle);
+              const xyz_camera_global = [Number(xyz_camera_local[0])+Number(x_target), Number(xyz_camera_local[1])+Number(y_target), Number(xyz_camera_local[2])+Number(z_target)];
+              if (Math.random()<density){
+                const head = new THREE.Mesh(
+                  new THREE.SphereGeometry(0.5, 32, 32),
+                  headMaterial
+                );
+                head.position.set(xyz_camera_global[0], xyz_camera_global[1], xyz_camera_global[2]);
+                scene.add(head);
+              }
+              xyzArray[xyzArray.length - 1].push([xyz_camera_global[0], xyz_camera_global[1], xyz_camera_global[2]]);
+            }
+          }
+          return xyzArray;
+        }
+        let xyzArray = organizeCameraLocations(tsvArray, meta);
+
+        function axesSwitch(){
+          if (axesSwitch){
+              scene.remove(axes);
+              controls.update()
+              axesSwitch = false;
+          } else {
+              scene.add(axes);
+              controls.update();
+              axesSwitch = true;
+          }        
+        }
+
+        let callbackId;
+        
+        tick();
+
+        function tick() {
+          renderer.render(scene, camera);
+          const tf = document.getElementById('hud');
+          let x = camera.position[["x"]];
+          let y = camera.position[["y"]];
+          let z = camera.position[["z"]];
+          let d = Math.sqrt(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2));
+          tf.innerHTML = `camera: [${Math.round(x*100)/100},${Math.round(y*100)/100},${Math.round(z*100)/100}]<br>`;
+          callbackId = requestAnimationFrame(tick);          
+        }
+      }
+
+      let axesSwitch = true;
+      let startButton = document.getElementById('start');
+      startButton.addEventListener('click', startCalc);
+      let fileBox = document.getElementById('upload');
+    </script>
+  </body>
+</html>
