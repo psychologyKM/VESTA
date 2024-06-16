@@ -1,0 +1,2 @@
+analysis/R/MCMCresult/fitA.obj filter=lfs diff=lfs merge=lfs -text
+analysis/R/MCMCresult/fitN.obj filter=lfs diff=lfs merge=lfs -text
