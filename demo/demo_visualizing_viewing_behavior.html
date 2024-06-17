@@ -152,18 +152,17 @@
         let lineList = []
         for (let i=0;i<originAndTargetArray.length;i++){
           let originXyz = new THREE.Vector3(originAndTargetArray[i][0], originAndTargetArray[i][1], originAndTargetArray[i][2]);
-          let endXyz =  new THREE.Vector3(originAndTargetArray[i][3], originAndTargetArray[i][4], originAndTargetArray[i][5]);
-          let directionXyz = endXyz.sub(originXyz).normalize()
-          raycasterList[i] = new THREE.Raycaster(
-          originXyz,
-          directionXyz
-          );
+          let endXyz =  new THREE.Vector3(originAndTargetArray[i][3], originAndTargetArray[i][4], originAndTargetArray[i][5]);          
           lineList[i] = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints([
               originXyz,
               endXyz
             ]),
             lineMaterial
+          );
+          raycasterList[i] = new THREE.Raycaster(
+          originXyz,
+          endXyz.sub(originXyz).normalize()
           );
           scene.add(lineList[i]);
         }
