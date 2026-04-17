@@ -75,6 +75,23 @@ ANCV <- function(datCompared){
   return(list(res1,res2))
 }
 
+datFinal <- dat
+datFinal$log_travelDistance <- log(datFinal$travelDistance)
+datFinal$log_travelDistancePre <- log(datFinal$travelDistancePre)
+nrow(subset(datFinal,distance>=15 | distancePre>=20))
+nrow(subset(datFinal,log_travelDistance<=0.1 | log_travelDistancePre<=0.1))
+nrow(subset(datFinal,dataLength<=1000))
+subset(datFinal,distance>=15 | distancePre>=20)$ID
+subset(datFinal,log_travelDistance<=0.1 | log_travelDistancePre<=0.1)$ID
+subset(datFinal,dataLength<=1000)$ID
+datFinal <- subset(datFinal,distance<15)
+datFinal <- subset(datFinal,distancePre<20)
+datFinal <- subset(datFinal, travelDistance > 0)
+datFinal <- subset(datFinal, travelDistancePre > 0)
+datFinal <- subset(datFinal, log_travelDistancePre > 0.1)
+datFinal <- subset(datFinal, log_travelDistance > 0.1)
+datFinal <- subset(datFinal, dataLength>1000)
+
 psych::describe(subset(datFinal,condition=="W")$log_travelDistance)
 psych::describe(subset(datFinal,condition=="P")$log_travelDistance)
 psych::describe(subset(datFinal,condition=="I")$log_travelDistance)
